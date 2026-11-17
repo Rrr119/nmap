@@ -284,6 +284,9 @@ struct niod {
   SSL *ssl;
   /* SSL SESSION ID (or NULL if none) */
   SSL_SESSION *ssl_session;
+  /* ALPN protocol list in wire format (or NULL if none) */
+  unsigned char *ssl_alpn;
+  size_t ssl_alpn_len;
 #else
   /* Because there are many if (nsi->ssl) cases in the code */
   char *ssl;

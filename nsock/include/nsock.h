@@ -211,6 +211,13 @@ nsock_ssl nsock_iod_get_ssl(nsock_iod nsockiod);
  * purposes only. */
 nsock_ssl_session nsock_iod_get_ssl_session(nsock_iod nsockiod, int inc_ref);
 
+/* Sets the ALPN protocol list for the next SSL handshake on this IOD. The
+ * list must use the TLS ALPN wire format: one length byte followed by the
+ * protocol name for each entry. Returns 0 on success, -1 on allocation
+ * failure or when OpenSSL support is unavailable. */
+int nsock_iod_set_ssl_alpn(nsock_iod nsockiod, const unsigned char *alpn,
+                           size_t alpn_len);
+
 /* Sometimes it is useful to store a pointer to information inside the NSP so
  * you can retrieve it during a callback. */
 void nsock_pool_set_udata(nsock_pool nsp, void *data);

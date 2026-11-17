@@ -495,6 +495,22 @@ function bind(addr, port)
 -- end
 function connect(host, port, protocol)
 
+--- Sets the ALPN protocol list for a future SSL connection.
+--
+-- The protocol list is used during the next TLS handshake, whether it is
+-- started by <code>connect</code> with the <code>"ssl"</code> protocol or by
+-- <code>reconnect_ssl</code>. Calling this method after a connection is
+-- established only affects a later reconnection. Passing <code>nil</code>
+-- clears the list.
+-- @param protocols A protocol name string or an array of protocol names.
+-- @return Status (true or false).
+-- @return Error message (if status is false).
+-- @usage
+-- local socket = nmap.new_socket()
+-- assert(socket:set_alpn("h2"))
+-- assert(socket:connect(host, port, "ssl"))
+function set_alpn(protocols)
+
 --- Reconnect the open (connected) socket with SSL.
 --
 -- It is sometimes desirable to request SSL over an established connection.

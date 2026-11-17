@@ -381,6 +381,12 @@ void handle_connect_result(struct npool *ms, struct nevent *nse, enum nse_status
           fatal("SSL_set_tlsext_host_name failed: %s", ERR_error_string(ERR_get_error(), NULL));
       }
 
+      if (iod->ssl_alpn != NULL && iod->ssl_alpn_len > 0
+          && SSL_set_alpn_protos(iod->ssl, iod->ssl_alpn, iod->ssl_alpn_len) != 0) {
+        nsock_log_error("SSL_set_alpn_protos failed: %s",
+                        ERR_error_string(ERR_get_error(), NULL));
+      }
+
       /* Associate our new SSL with the connected socket.  It will inherit the
        * non-blocking nature of the sd */
       if (SSL_set_fd(iod->ssl, iod->sd) != 1)
@@ -491,6 +497,12 @@ void handle_connect_result(struct npool *ms, struct nevent *nse, enum nse_status
         iod->ssl = SSL_new(ms->sslctx);
         if (!iod->ssl)
           fatal("SSL_new failed: %s", ERR_error_string(ERR_get_error(), NULL));
+
+        if (iod->ssl_alpn != NULL && iod->ssl_alpn_len > 0
+            && SSL_set_alpn_protos(iod->ssl, iod->ssl_alpn, iod->ssl_alpn_len) != 0) {
+          nsock_log_error("SSL_set_alpn_protos failed: %s",
+                          ERR_error_string(ERR_get_error(), NULL));
+        }
 
         SSL_set_options(iod->ssl, options | SSL_OP_NO_SSLv2);
         socket_count_read_inc(nse->iod);

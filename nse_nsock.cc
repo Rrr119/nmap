@@ -22,10 +22,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 
 #include <sstream>
 #include <iomanip>
+#include <string>
 
 #define DEFAULT_TIMEOUT 30000
 
@@ -61,11 +63,15 @@ typedef struct nse_nsock_udata
   const char *action;
 
   void *ssl_session;
+  char *alpn;
+  size_t alpn_len;
 
   struct sockaddr_storage source_addr;
   size_t source_addrlen;
 
 } nse_nsock_udata;
+
+static void free_alpn (nse_nsock_udata *nu);
 
 static const char *NU_ACTION_IMMEDIATE = "returned immediately";
 
@@ -481,6 +487,9 @@ static int l_reconnect_ssl (lua_State *L)
 
   int oldtop = lua_gettop(L);
   nu->action = "SSL RECONNECT";
+#if HAVE_OPENSSL
+  nsock_iod_set_ssl_alpn(nu->nsiod, (unsigned char *) nu->alpn, nu->alpn_len);
+#endif
   nsock_reconnect_ssl(nsp, nu->nsiod, callback, nu->timeout,
       nu, nu->ssl_session);
 
@@ -586,6 +595,10 @@ static int connect (lua_State *L, int status, lua_KContext ctx)
         // Assume TCP unless we're explicitly connecting to a UDP port
         nu->proto = IPPROTO_TCP;
       }
+#if HAVE_OPENSSL
+      nsock_iod_set_ssl_alpn(nu->nsiod, (unsigned char *) nu->alpn,
+                             nu->alpn_len);
+#endif
       nsock_connect_ssl(nsp, nu->nsiod, callback, nu->timeout, nu,
           dest->ai_addr, dest->ai_addrlen, nu->proto, port, nu->ssl_session);
       break;
@@ -850,6 +863,61 @@ static int l_set_timeout (lua_State *L)
   return nseU_success(L);
 }
 
+static int l_set_alpn (lua_State *L)
+{
+  nse_nsock_udata *nu = check_nsock_udata(L, 1, false);
+  std::string wire;
+
+  if (lua_isnil(L, 2)) {
+    free_alpn(nu);
+    return nseU_success(L);
+  }
+
+  if (lua_type(L, 2) == LUA_TSTRING) {
+    size_t len;
+    const char *protocol = luaL_checklstring(L, 2, &len);
+    if (len == 0 || len > 255)
+      return luaL_error(L, "ALPN protocol length must be between 1 and 255");
+    wire.push_back((char) len);
+    wire.append(protocol, len);
+  } else if (lua_type(L, 2) == LUA_TTABLE) {
+    int count = lua_rawlen(L, 2);
+    for (int i = 1; i <= count; i++) {
+      size_t len;
+      lua_rawgeti(L, 2, i);
+      if (lua_type(L, -1) != LUA_TSTRING) {
+        lua_pop(L, 1);
+        return luaL_error(L, "ALPN protocol %d is not a string", i);
+      }
+      const char *protocol = lua_tolstring(L, -1, &len);
+      if (len == 0 || len > 255) {
+        lua_pop(L, 1);
+        return luaL_error(L, "ALPN protocol length must be between 1 and 255");
+      }
+      wire.push_back((char) len);
+      wire.append(protocol, len);
+      lua_pop(L, 1);
+    }
+  } else {
+    nseU_typeerror(L, 2, "string, table, or nil");
+  }
+
+  if (wire.size() > 65535)
+    return luaL_error(L, "ALPN protocol list too long");
+
+  char *copy = NULL;
+  if (!wire.empty()) {
+    copy = (char *) malloc(wire.size());
+    if (copy == NULL)
+      return nseU_safeerror(L, "failed to allocate ALPN protocol list");
+    memcpy(copy, wire.data(), wire.size());
+  }
+  free_alpn(nu);
+  nu->alpn = copy;
+  nu->alpn_len = wire.size();
+  return nseU_success(L);
+}
+
 static int sleep_destructor (lua_State *L)
 {
   nsock_pool nsp = get_pool(L);
@@ -983,6 +1051,8 @@ static void initialize (lua_State *L, int idx, nse_nsock_udata *nu,
   nu->proto = proto;
   nu->af = af;
   nu->ssl_session = NULL;
+  nu->alpn = NULL;
+  nu->alpn_len = 0;
   nu->source_addr.ss_family = AF_UNSPEC;
   nu->source_addrlen = sizeof(nu->source_addr);
   nu->timeout = DEFAULT_TIMEOUT;
@@ -1026,12 +1096,20 @@ static void close_internal (lua_State *L, nse_nsock_udata *nu)
   nu->nsiod = NULL;
 }
 
+static void free_alpn (nse_nsock_udata *nu)
+{
+  free(nu->alpn);
+  nu->alpn = NULL;
+  nu->alpn_len = 0;
+}
+
 static int l_close (lua_State *L)
 {
   nse_nsock_udata *nu = check_nsock_udata(L, 1, false);
   if (nu->nsiod == NULL)
     return nseU_safeerror(L, "socket already closed");
   close_internal(L, nu);
+  free_alpn(nu);
   initialize(L, 1, nu, nu->proto, nu->af);
   return nseU_success(L);
 }
@@ -1041,6 +1119,7 @@ static int nsock_gc (lua_State *L)
   nse_nsock_udata *nu = check_nsock_udata(L, 1, false);
   if (nu->nsiod)
     return l_close(L);
+  free_alpn(nu);
   return 0;
 }
 
@@ -1185,6 +1264,7 @@ LUALIB_API int luaopen_nsock (lua_State *L)
     {"receive_bytes", l_receive_bytes},
     {"receive_lines", l_receive_lines},
     {"reconnect_ssl", l_reconnect_ssl},
+    {"set_alpn", l_set_alpn},
     {"set_timeout", l_set_timeout},
     {"eof", l_eof},
     {NULL, NULL}

@@ -59,6 +59,7 @@ local libs = {
 "geoip",
 "giop",
 "gps",
+"grpc",
 "http",
 "httpspider",
 "iax2",

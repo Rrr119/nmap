@@ -144,6 +144,8 @@ nsock_iod nsock_iod_new2(nsock_pool nsockp, int sd, void *userdata) {
 
 #if HAVE_OPENSSL
   nsi->ssl_session = NULL;
+  nsi->ssl_alpn = NULL;
+  nsi->ssl_alpn_len = 0;
 #endif
 
   if (nsp->px_chain) {
@@ -250,6 +252,10 @@ void nsock_iod_delete(nsock_iod nsockiod, enum nsock_del_mode pending_response) 
 
 #if HAVE_OPENSSL
   /* Close any SSL resources */
+  free(nsi->ssl_alpn);
+  nsi->ssl_alpn = NULL;
+  nsi->ssl_alpn_len = 0;
+
   if (nsi->ssl) {
     /* No longer free session because copy nsi stores is not reference counted */
 #if 0
@@ -306,6 +312,32 @@ void nsock_iod_delete(nsock_iod nsockiod, enum nsock_del_mode pending_response) 
   if (nsi->px_ctx)
     proxy_chain_context_delete(nsi->px_ctx);
 }
+
+#if HAVE_OPENSSL
+int nsock_iod_set_ssl_alpn(nsock_iod nsockiod, const unsigned char *alpn,
+                           size_t alpn_len) {
+  struct niod *nsi = (struct niod *)nsockiod;
+
+  free(nsi->ssl_alpn);
+  nsi->ssl_alpn = NULL;
+  nsi->ssl_alpn_len = 0;
+  if (alpn == NULL || alpn_len == 0) {
+    return 0;
+  }
+  nsi->ssl_alpn = (unsigned char *)malloc(alpn_len);
+  if (nsi->ssl_alpn == NULL) {
+    return -1;
+  }
+  memcpy(nsi->ssl_alpn, alpn, alpn_len);
+  nsi->ssl_alpn_len = alpn_len;
+  return 0;
+}
+#else
+int nsock_iod_set_ssl_alpn(nsock_iod nsockiod, const unsigned char *alpn,
+                           size_t alpn_len) {
+  return -1;
+}
+#endif
 
 /* Returns the ID of an nsock_iod . This ID is always unique amongst ids for a
  * given nspool (unless you blow through billions of them). */
